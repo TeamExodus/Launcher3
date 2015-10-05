@@ -1302,11 +1302,13 @@ public class Workspace extends PagedView
             if (mCustomContentCallbacks != null) {
                 mCustomContentCallbacks.onShow(false);
                 mCustomContentShowTime = System.currentTimeMillis();
+                mLauncher.updateVoiceButtonProxyVisible(false);
             }
         } else if (hasCustomContent() && getNextPage() != 0 && mCustomContentShowing) {
             mCustomContentShowing = false;
             if (mCustomContentCallbacks != null) {
                 mCustomContentCallbacks.onHide();
+                mLauncher.updateVoiceButtonProxyVisible(false);
             }
         }
     }
