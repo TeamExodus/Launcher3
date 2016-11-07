@@ -113,13 +113,13 @@ public class WidgetsModel {
     }
 
     public List<HideAppInfo> readHideAppList() throws Exception {
-        File xmlFile = new File(mContext.getFilesDir(), "hide.xml");
-        FileInputStream inputStream = new FileInputStream(xmlFile);
         List<HideAppInfo> hideapps = new ArrayList<HideAppInfo>();
-        try {
+        try ( FileInputStream inputStream = new FileInputStream(
+                new File( mContext.getFilesDir(),
+                    com.android.launcher3.allapps.AlphabeticalAppsList.HIDE_APPS_FILE_NAME))) {
             hideapps = HideAppService.read(inputStream);
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (java.io.FileNotFoundException fnfe) {
+            Log.e(TAG, "File not found: " + fnfe.getMessage());
         }
         return hideapps;
     }
