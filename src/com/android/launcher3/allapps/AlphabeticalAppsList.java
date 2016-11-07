@@ -54,7 +54,8 @@ import java.util.TreeMap;
  */
 public class AlphabeticalAppsList {
 
-    public static final String TAG = "AlphabeticalAppsList";
+    private static final String TAG = "AlphabeticalAppsList";
+    public static final String HIDE_APPS_FILE_NAME = "hide.xml";
     private static final boolean DEBUG = false;
     private static final boolean DEBUG_PREDICTIONS = false;
 
@@ -313,22 +314,24 @@ public class AlphabeticalAppsList {
     }
 
     public List<HideAppInfo>  readHideAppList() throws Exception{
-        File xmlFile = new File(mLauncher.getFilesDir(), "hide.xml");
-        FileInputStream inputStream = new FileInputStream(xmlFile);
-        List<HideAppInfo> hideapps = new ArrayList<HideAppInfo>() ;
-        try {
+        List<HideAppInfo> hideapps = new ArrayList<HideAppInfo>();
+        try ( FileInputStream inputStream = new FileInputStream(
+                new File( mLauncher.getFilesDir(), HIDE_APPS_FILE_NAME))) {
             hideapps = HideAppService.read(inputStream);
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch(java.io.FileNotFoundException fnfe){
+            Log.e(TAG, "File not found: " + fnfe.getMessage());
         }
         mHideApps.clear();
         mHideApps.addAll(hideapps);
         return hideapps;
     }
     public void saveHideAppList() throws Exception{
-        File xmlFile = new File(mLauncher.getFilesDir(), "hide.xml");
-        FileOutputStream outStream = new FileOutputStream(xmlFile);
-        HideAppService.save(mHideApps, outStream);
+        try ( FileOutputStream outStream = new FileOutputStream(
+                new File( mLauncher.getFilesDir(), HIDE_APPS_FILE_NAME))) {
+            HideAppService.save(mHideApps, outStream);
+        } catch(java.io.FileNotFoundException fnfe){
+            Log.e(TAG, "File not found: " + fnfe.getMessage());
+        }
     }
 
     public void showHideapp(){
