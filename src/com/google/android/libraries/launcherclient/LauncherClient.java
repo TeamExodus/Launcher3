@@ -23,7 +23,7 @@ import android.view.WindowManager;
 public class LauncherClient {
     private static AppServiceConnection sApplicationConnection;
 
-    private final Activity mActivity;
+    private Activity mActivity;
     private OverlayCallbacks mCurrentCallbacks;
     private boolean mDestroyed;
     private boolean mIsResumed;
@@ -31,10 +31,10 @@ public class LauncherClient {
     private ILauncherOverlay mOverlay;
     private OverlayServiceConnection mServiceConnection;
     private int mServiceConnectionOptions;
-    private final Intent mServiceIntent;
+    private Intent mServiceIntent;
     private int mServiceStatus;
     private int mState;
-    private final BroadcastReceiver mUpdateReceiver;
+    private BroadcastReceiver mUpdateReceiver;
     private WindowManager.LayoutParams mWindowAttrs;
 
     public LauncherClient(Activity activity, LauncherClientCallbacks callbacks, String targetPackage, boolean overlayEnabled) {
@@ -126,17 +126,21 @@ public class LauncherClient {
 
     private void removeClient(boolean removeAppConnection) {
         mDestroyed = true;
-        mActivity.unbindService(mServiceConnection);
-        mActivity.unregisterReceiver(mUpdateReceiver);
+        try{
+            mActivity.unbindService(mServiceConnection);
+            mActivity.unregisterReceiver(mUpdateReceiver);
 
-        if (mCurrentCallbacks != null) {
-            mCurrentCallbacks.clear();
-            mCurrentCallbacks = null;
-        }
+            if (mCurrentCallbacks != null) {
+                mCurrentCallbacks.clear();
+                mCurrentCallbacks = null;
+            }
 
-        if (removeAppConnection && sApplicationConnection != null) {
-            mActivity.getApplicationContext().unbindService(sApplicationConnection);
-            sApplicationConnection = null;
+            if (removeAppConnection && sApplicationConnection != null) {
+                mActivity.getApplicationContext().unbindService(sApplicationConnection);
+                sApplicationConnection = null;
+            }
+        } catch(IllegalArgumentException iae){
+            Log.e("removeClient", "Unable to unregister or unbind service",iae);
         }
     }
 
