@@ -969,6 +969,9 @@ public class Launcher extends Activity
         super.onResume();
         getUserEventDispatcher().resetElapsedSessionMillis();
 
+        //bind unread number service
+        mModel.bindUnreadService();
+
         // Restore the previous launcher state
         if (mOnResumeState == State.WORKSPACE) {
             showWorkspace(false);
@@ -1956,7 +1959,6 @@ public class Launcher extends Activity
     @Override
     public void onDestroy() {
         super.onDestroy();
-
         // Remove all pending runnables
         mHandler.removeMessages(ADVANCE_MSG);
         mHandler.removeMessages(0);
@@ -1968,6 +1970,7 @@ public class Launcher extends Activity
         // been created. In this case, don't interfere with the new Launcher.
         if (mModel.isCurrentCallbacks(this)) {
             mModel.stopLoader();
+            mModel.unbindUnreadService();
             LauncherAppState.getInstance().setLauncher(null);
         }
 
