@@ -90,6 +90,7 @@ import com.android.launcher3.DropTarget.DragObject;
 import com.android.launcher3.LauncherSettings.Favorites;
 import com.android.launcher3.accessibility.LauncherAccessibilityDelegate;
 import com.android.launcher3.allapps.AllAppsContainerView;
+import com.android.launcher3.allapps.PredictiveAppsProvider;
 import com.android.launcher3.allapps.AllAppsTransitionController;
 import com.android.launcher3.allapps.DefaultAppSearchController;
 import com.android.launcher3.compat.AppWidgetManagerCompat;
@@ -356,6 +357,11 @@ public class Launcher extends Activity
     private boolean mRotationEnabled = false;
 
     private LauncherTab mLauncherTab;
+    private final String KEY_ENABLE_PREDICTIVE_APPS = "pref_showPredictiveApps";
+    private PredictiveAppsProvider mPredictiveAppsProvider;
+    private boolean mShowPredictiveApps;
+
+    private Context mContext;
 
     @Thunk void setOrientation() {
         if (mRotationEnabled) {
@@ -388,11 +394,20 @@ public class Launcher extends Activity
             Trace.beginSection("Launcher-onCreate");
         }
 
+        mContext = getApplicationContext();
+        mShowPredictiveApps = Utilities.getPrefs(mContext).getBoolean(KEY_ENABLE_PREDICTIVE_APPS, true);
+        if (mShowPredictiveApps) {
+             mPredictiveAppsProvider = new PredictiveAppsProvider(mContext);
+        }
+
         if (mLauncherCallbacks != null) {
             mLauncherCallbacks.preOnCreate();
         }
 
         super.onCreate(savedInstanceState);
+
+        boolean visible = Utilities.isShowSearchBar(this);
+        FeatureFlags.QSB_ON_FIRST_SCREEN = visible;
 
         LauncherAppState app = LauncherAppState.getInstance();
 
@@ -464,7 +479,7 @@ public class Launcher extends Activity
         // In case we are on a device with locked rotation, we should look at preferences to check
         // if the user has specifically allowed rotation.
         if (!mRotationEnabled) {
-            mRotationEnabled = Utilities.isAllowRotationPrefEnabled(getApplicationContext());
+            mRotationEnabled = Utilities.isAllowRotationPrefEnabled(mContext);
             mRotationPrefChangeHandler = new RotationPrefChangeHandler();
             mSharedPrefs.registerOnSharedPreferenceChangeListener(mRotationPrefChangeHandler);
         }
@@ -500,6 +515,9 @@ public class Launcher extends Activity
      * @param activate if true, make sure the status bar is light, otherwise base on wallpaper.
      */
     public void activateLightStatusBar(boolean activate) {
+        if (getResources().getBoolean(R.bool.disable_statusbar_color_inversion)){
+            activate = false;
+        }
         boolean lightStatusBar = activate || (FeatureFlags.LIGHT_STATUS_BAR
                 && mExtractedColors.getColor(ExtractedColors.STATUS_BAR_INDEX,
                 ExtractedColors.DEFAULT_DARK) == ExtractedColors.DEFAULT_LIGHT);
@@ -1062,7 +1080,7 @@ public class Launcher extends Activity
             mModel.refreshShortcutsIfRequired();
         }
 
-        if (shouldShowDiscoveryBounce()) {
+        if (FeatureFlags.LAUNCHER3_ALL_APPS_PULL_UP && shouldShowDiscoveryBounce()) {
             mAllAppsController.showDiscoveryBounce();
         }
         mIsResumeFromActionScreenOff = false;
@@ -1072,6 +1090,8 @@ public class Launcher extends Activity
         if (mLauncherCallbacks != null) {
             mLauncherCallbacks.onResume();
         }
+
+        tryAndUpdatePredictedApps();
     }
 
     @Override
@@ -1166,9 +1186,7 @@ public class Launcher extends Activity
         if (mLauncherCallbacks != null) {
             return mLauncherCallbacks.hasSettings();
         } else {
-            // On devices with a locked orientation, we will at least have the allow rotation
-            // setting.
-            return !getResources().getBoolean(R.bool.allow_rotation);
+            return true;
         }
     }
 
@@ -2664,17 +2682,17 @@ public class Launcher extends Activity
             return;
         }
 
-        String pickerPackage = getString(R.string.wallpaper_picker_package);
+        /*String pickerPackage = getString(R.string.wallpaper_picker_package);
         if (TextUtils.isEmpty(pickerPackage)) {
             pickerPackage =  PackageManagerHelper.getWallpaperPickerPackage(getPackageManager());
-        }
+        }*/
 
         int pageScroll = mWorkspace.getScrollForPage(mWorkspace.getPageNearestToCenterOfScreen());
         float offset = mWorkspace.mWallpaperOffset.wallpaperOffsetForScroll(pageScroll);
 
         setWaitingForResult(new PendingRequestArgs(new ItemInfo()));
         Intent intent = new Intent(Intent.ACTION_SET_WALLPAPER)
-                .setPackage(pickerPackage)
+                //.setPackage(pickerPackage)
                 .putExtra(Utilities.EXTRA_WALLPAPER_OFFSET, offset);
         intent.setSourceBounds(getViewBounds(v));
         startActivityForResult(intent, REQUEST_PICK_WALLPAPER, getActivityLaunchOptions(v));
@@ -2865,11 +2883,16 @@ public class Launcher extends Activity
             } else if (user == null || user.equals(UserHandleCompat.myUserHandle())) {
                 // Could be launching some bookkeeping activity
                 startActivity(intent, optsBundle);
+                if (isAllAppsVisible() && mShowPredictiveApps) {
+                    mPredictiveAppsProvider.updateComponentCount(intent.getComponent());
+                }
             } else {
                 LauncherAppsCompat.getInstance(this).startActivityForProfile(
                         intent.getComponent(), user, intent.getSourceBounds(), optsBundle);
             }
             return true;
+        } catch (NullPointerException npe) {
+            Log.e(TAG, "Unable to launch. tag=" + item + " intent=" + intent, npe);
         } catch (ActivityNotFoundException|SecurityException e) {
             Toast.makeText(this, R.string.activity_not_found, Toast.LENGTH_SHORT).show();
             Log.e(TAG, "Unable to launch. tag=" + item + " intent=" + intent, e);
@@ -3253,6 +3276,7 @@ public class Launcher extends Activity
             getWindow().getDecorView()
                     .sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED);
         }
+        mWorkspace.updateQsbVisibility();
         return changed;
     }
 
@@ -3446,11 +3470,25 @@ public class Launcher extends Activity
      * resumed.
      */
     public void tryAndUpdatePredictedApps() {
-        if (mLauncherCallbacks != null) {
-            List<ComponentKey> apps = mLauncherCallbacks.getPredictedApps();
+        if (!mShowPredictiveApps) {
+            if (mLauncherCallbacks != null) {
+                List<ComponentKey> apps = mLauncherCallbacks.getPredictedApps();
+                if (apps != null) {
+                    mAppsView.setPredictedApps(apps);
+                    getUserEventDispatcher().setPredictedApps(apps);
+                }
+            }
+        } else {
+            List<ComponentKey> apps;
+            if (mLauncherCallbacks != null) {
+                apps = mLauncherCallbacks.getPredictedApps();
+            } else {
+                apps = mPredictiveAppsProvider.getPredictions();
+                mPredictiveAppsProvider.updateTopPredictedApps();
+            }
+
             if (apps != null) {
                 mAppsView.setPredictedApps(apps);
-                getUserEventDispatcher().setPredictedApps(apps);
             }
         }
     }
@@ -4513,6 +4551,11 @@ public class Launcher extends Activity
                 if (!waitUntilResume(this, true)) {
                     run();
                 }
+            }
+            if ("pref_iconPackPackage".equals(key)) {
+                mModel.clearIconCache();
+                mModel.resetLoadedState(true, true);
+                mOnResumeNeedsLoad = true;
             }
         }
 

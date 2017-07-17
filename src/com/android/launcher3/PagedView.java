@@ -2146,6 +2146,7 @@ public abstract class PagedView extends ViewGroup implements ViewGroup.OnHierarc
 
     public void onEndReordering() {
         mIsReordering = false;
+        mDragView = null;
     }
 
     public boolean startReordering(View v) {

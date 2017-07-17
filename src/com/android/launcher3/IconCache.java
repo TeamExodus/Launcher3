@@ -214,6 +214,21 @@ public class IconCache {
     }
 
     /**
+     * Remove any records for the supplied user name from memory.
+     */
+     private void removeFromMemCacheLocked(UserHandleCompat user) {
+        HashSet<ComponentKey> forDeletion = new HashSet<ComponentKey>();
+        for (ComponentKey key: mCache.keySet()) {
+            if (key.user.equals(user)) {
+                forDeletion.add(key);
+            }
+        }
+        for (ComponentKey condemned: forDeletion) {
+            mCache.remove(condemned);
+        }
+    }
+
+    /**
      * Updates the entries related to the given package in memory and persistent DB.
      */
     public synchronized void updateIconsForPkg(String packageName, UserHandleCompat user) {
@@ -240,6 +255,19 @@ public class IconCache {
         mIconDb.delete(
                 IconDB.COLUMN_COMPONENT + " LIKE ? AND " + IconDB.COLUMN_USER + " = ?",
                 new String[]{packageName + "/%", Long.toString(userSerial)});
+    }
+
+    /**
+     * Removes the entries related to the given user in memory and persistent DB.
+     */
+    public synchronized void removeAllIconsForUser(UserHandleCompat user) {
+
+
+        removeFromMemCacheLocked(user);
+        long userSerial = mUserManager.getSerialNumberForUser(user);
+        mIconDb.delete(
+                IconDB.COLUMN_USER + " = ?",
+                new String[]{Long.toString(userSerial)});
     }
 
     public void updateDbIcons(Set<String> ignorePackagesForMainUser) {
@@ -390,6 +418,14 @@ public class IconCache {
             entry.icon = Utilities.createBadgedIconBitmap(
                     mIconProvider.getIcon(app, mIconDpi), app.getUser(),
                     mContext, -1);
+        }
+
+        IconPack iconPack = IconPackProvider.loadAndGetIconPack(mContext);
+        if (iconPack != null) {
+            Drawable iconDrawable = iconPack.getIcon(app, entry.icon, app.getLabel());
+            if (iconDrawable != null) {
+                entry.icon = Utilities.createIconBitmap(iconDrawable, mContext);
+            }
         }
         entry.title = app.getLabel();
         entry.contentDescription = mUserManager.getBadgedLabelForUser(entry.title, app.getUser());
@@ -558,6 +594,13 @@ public class IconCache {
                     entry.icon = Utilities.createBadgedIconBitmap(
                             mIconProvider.getIcon(info, mIconDpi), info.getUser(),
                             mContext, unreadNum);
+                    IconPack iconPack = IconPackProvider.loadAndGetIconPack(mContext);
+                    if (iconPack != null) {
+                        Drawable iconDrawable = iconPack.getIcon(info, entry.icon, info.getLabel());
+                        if (iconDrawable != null) {
+                            entry.icon = Utilities.createIconBitmap(iconDrawable, mContext);
+                        }
+                    }
                 } else {
                     if (usePackageIcon) {
                         CacheEntry packageEntry = getEntryForPackageLocked(
@@ -638,13 +681,22 @@ public class IconCache {
                     if (appInfo == null) {
                         throw new NameNotFoundException("ApplicationInfo is null");
                     }
+                    entry.title = appInfo.loadLabel(mPackageManager);
 
                     // Load the full res icon for the application, but if useLowResIcon is set, then
                     // only keep the low resolution icon instead of the larger full-sized icon
                     Bitmap icon = Utilities.createBadgedIconBitmap(
                             appInfo.loadIcon(mPackageManager), user, mContext, -1);
+                    // get first one matching packageName
+                    IconPack iconPack = IconPackProvider.loadAndGetIconPack(mContext);
+                    if (iconPack != null) {
+                        Drawable iconDrawable = iconPack.getIcon(packageName, icon, entry.title);
+                        if (iconDrawable != null) {
+                            icon = Utilities.createIconBitmap(iconDrawable, mContext);
+                        }
+                    }
+
                     Bitmap lowResIcon =  generateLowResIcon(icon, mPackageBgColor);
-                    entry.title = appInfo.loadLabel(mPackageManager);
                     entry.contentDescription = mUserManager.getBadgedLabelForUser(entry.title, user);
                     entry.icon = useLowResIcon ? lowResIcon : icon;
                     entry.isLowResIcon = useLowResIcon;
@@ -890,5 +942,9 @@ public class IconCache {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public void clearIconCache() {
+        removeAllIconsForUser(UserHandleCompat.myUserHandle());
     }
 }
